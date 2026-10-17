@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 24" width="1200" height="24" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="hair" x1="0" x2="1">
+      <stop offset="0" stop-color="#6E6E73" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#6E6E73" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#6E6E73" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" x2="1">
+      <stop offset="0" stop-color="#64D2FF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#64D2FF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#64D2FF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .shine { animation: sweep 7s cubic-bezier(.45,0,.25,1) infinite; }
+    @keyframes sweep { 0% { transform: translateX(-260px); } 60%, 100% { transform: translateX(1200px); } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .shine { display: none; } }
+  </style>
+  <rect x="0" y="11.5" width="1200" height="1" fill="url(#hair)"/>
+  <rect class="shine" x="0" y="11" width="240" height="2" rx="1" fill="url(#shine)"/>
+</svg>
