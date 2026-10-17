@@ -13,11 +13,13 @@ THEMES = {
         bg="#0A0A0C", body="#111114", bar="#1A1A1E", stroke="#FFFFFF", stroke_op="0.09",
         text="#F5F5F7", text2="#A1A1A6", text3="#6E6E73", grid="#FFFFFF", grid_op="0.05",
         blue="#0A84FF", cyan="#64D2FF", mint="#66D4CF", aurora_op="0.42", node_fill="#0A0A0C",
+        pill="#FFFFFF", pill_op="0.05", pill_stroke="#FFFFFF", pill_stroke_op="0.14", comet="#D2F5FF", edge_op="0.55",
     ),
     "light": dict(
         bg="#FBFBFD", body="#FFFFFF", bar="#F2F2F5", stroke="#000000", stroke_op="0.08",
         text="#1D1D1F", text2="#515154", text3="#86868B", grid="#000000", grid_op="0.05",
         blue="#0071E3", cyan="#0AA5D8", mint="#00A39A", aurora_op="0.28", node_fill="#FBFBFD",
+        pill="#FFFFFF", pill_op="0.78", pill_stroke="#000000", pill_stroke_op="0.10", comet="#0071E3", edge_op="0.6",
     ),
 }
 
@@ -27,42 +29,105 @@ MONO = "'SF Mono', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'De
 REDUCED = "@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }"
 
 
+
+# ----------------------------------------------------------------------------- architecture diagram
+def diagram(t):
+    """Client -> gateway -> services -> data, with comet pulses (SMIL) and nodes that light up on arrival."""
+    D = 4.2                                   # one full request cycle, seconds
+    PH = 30                                   # pill height
+    pills = {                                 # name: (centre x, centre y, width, accent)
+        "gateway":  (836, 240, 92, t["blue"]),
+        "identity": (994, 165, 98, t["cyan"]), "orders": (994, 240, 98, t["cyan"]), "catalog": (994, 315, 98, t["cyan"]),
+        "postgres": (1116, 165, 90, t["mint"]), "rabbitmq": (1116, 240, 90, t["mint"]), "redis": (1116, 315, 90, t["mint"]),
+    }
+    client = (736, 240)
+    captions = [(736, "CLIENT"), (836, "GATEWAY"), (994, "SERVICES"), (1116, "DATA")]
+
+    def left(n):
+        cx, cy, w, _ = pills[n]; return (cx - w / 2, cy)
+
+    def right(n):
+        cx, cy, w, _ = pills[n]; return (cx + w / 2, cy)
+
+    def curve(a, b):
+        (x1, y1), (x2, y2) = a, b
+        if y1 == y2:
+            return f"M{x1:.1f} {y1} L{x2:.1f} {y2}"
+        mx = (x1 + x2) / 2
+        return f"M{x1:.1f} {y1} C{mx:.1f} {y1} {mx:.1f} {y2} {x2:.1f} {y2}"
+
+    # (start, end, from-colour, to-colour, start-time, end-time, node that lights up)
+    edges = [((client[0] + 10, client[1]), left("gateway"), t["text3"], t["blue"], 0.00, 0.70, "gateway")]
+    for k, svc in enumerate(["identity", "orders", "catalog"]):
+        a = 0.82 + k * 0.10
+        edges.append((right("gateway"), left(svc), t["blue"], t["cyan"], a, a + 0.85, svc))
+    for k, (svc, db) in enumerate([("identity", "postgres"), ("orders", "rabbitmq"), ("catalog", "redis")]):
+        a = 0.82 + k * 0.10 + 0.85 + 0.12
+        edges.append((right(svc), left(db), t["cyan"], t["mint"], a, a + 0.45, db))
+
+    defs, lines, fx = [], [], []
+    arrivals = {}
+    for i, (a, b, c1, c2, t0, t1, node) in enumerate(edges):
+        defs.append(f'<linearGradient id="g{i}" gradientUnits="userSpaceOnUse" x1="{a[0]:.1f}" y1="0" x2="{b[0]:.1f}" y2="0">'
+                    f'<stop offset="0" stop-color="{c1}"/><stop offset="1" stop-color="{c2}"/></linearGradient>')
+        lines.append(f'<path id="e{i}" d="{curve(a, b)}" class="edge" stroke="url(#g{i})"/>')
+        k0, k1 = t0 / D, t1 / D
+        arrivals[node] = k1
+        # comet: bright head + two fading tail dots trailing slightly behind
+        for r, op, lag, glow in [(3.4, 1, 0.0, True), (2.5, 0.5, 0.05, False), (1.8, 0.25, 0.10, False)]:
+            fx.append(
+                f'<circle r="{r}" fill="{t["comet"]}" fill-opacity="{op}" opacity="0"{" filter=\"url(#glow)\"" if glow else ""}>'
+                f'<animateMotion dur="{D}s" begin="{lag}s" repeatCount="indefinite" calcMode="spline" '
+                f'keyPoints="0;0;1;1" keyTimes="0;{k0:.4f};{k1:.4f};1" keySplines="0 0 1 1;0.45 0 0.3 1;0 0 1 1">'
+                f'<mpath href="#e{i}" xlink:href="#e{i}"/></animateMotion>'
+                f'<animate attributeName="opacity" dur="{D}s" begin="{lag}s" repeatCount="indefinite" '
+                f'values="0;0;1;1;0;0" keyTimes="0;{k0:.4f};{k0 + 0.015:.4f};{k1 - 0.015:.4f};{k1:.4f};1"/></circle>')
+
+    nodes = []
+    # client: a small "device" ring that emits a ripple at the start of each cycle
+    cx, cy = client
+    nodes.append(f'<circle cx="{cx}" cy="{cy}" r="10" class="pill" />')
+    nodes.append(f'<circle cx="{cx}" cy="{cy}" r="3.6" fill="{t["text2"]}"/>')
+    fx.append(f'<circle cx="{cx}" cy="{cy}" r="10" fill="none" stroke="{t["blue"]}" stroke-width="1.4" opacity="0">'
+              f'<animate attributeName="r" dur="{D}s" repeatCount="indefinite" values="10;22;22" keyTimes="0;0.16;1"/>'
+              f'<animate attributeName="opacity" dur="{D}s" repeatCount="indefinite" values="0.7;0;0" keyTimes="0;0.16;1"/></circle>')
+
+    for name, (pcx, pcy, w, acc) in pills.items():
+        x, y = pcx - w / 2, pcy - PH / 2
+        gw = name == "gateway"
+        nodes.append(f'<rect x="{x:.1f}" y="{y}" width="{w}" height="{PH}" rx="10" class="pill{" gw" if gw else ""}"/>')
+        nodes.append(f'<circle cx="{x + 14:.1f}" cy="{pcy}" r="3.3" fill="{acc}"/>')
+        nodes.append(f'<text x="{x + 25:.1f}" y="{pcy + 4.5}" class="plabel{" strong" if gw else ""}">{name}</text>')
+        k = arrivals[name]
+        fx.append(f'<rect x="{x:.1f}" y="{y}" width="{w}" height="{PH}" rx="10" fill="{acc}" fill-opacity="0.16" '
+                  f'stroke="{acc}" stroke-width="1.6" opacity="0">'
+                  f'<animate attributeName="opacity" dur="{D}s" repeatCount="indefinite" '
+                  f'values="0;0;1;0;0" keyTimes="0;{k - 0.01:.4f};{k + 0.02:.4f};{k + 0.2:.4f};1"/></rect>')
+
+    caps = [f'<text x="{x}" y="122" class="caption">{c}</text>' for x, c in captions]
+
+    css = f"""
+    .caption {{ font: 600 10.5px {MONO}; letter-spacing: 2.2px; fill: {t['text3']}; text-anchor: middle; opacity: 0.85; }}
+    .edge    {{ fill: none; stroke-width: 1.4; stroke-opacity: {t['edge_op']}; }}
+    .pill    {{ fill: {t['pill']}; fill-opacity: {t['pill_op']}; stroke: {t['pill_stroke']}; stroke-opacity: {t['pill_stroke_op']}; }}
+    .pill.gw {{ fill: {t['blue']}; fill-opacity: 0.14; stroke: {t['blue']}; stroke-opacity: 0.75; stroke-width: 1.3; }}
+    .plabel  {{ font: 500 12.5px {MONO}; fill: {t['text2']}; }}
+    .plabel.strong {{ fill: {t['text']}; }}
+    @media (prefers-reduced-motion: reduce) {{ .fx {{ display: none; }} }}"""
+
+    defs.append('<filter id="glow" x="-300%" y="-300%" width="700%" height="700%">'
+                '<feGaussianBlur stdDeviation="3.4" result="b"/>'
+                '<feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>')
+
+    body = "\n".join(["<g>"] + caps + lines + nodes + ['<g class="fx">'] + fx + ["</g>", "</g>"])
+    return "\n    ".join(defs), body, css
+
+
 # ----------------------------------------------------------------------------- hero
 def hero(t):
-    # Service-architecture motif: client -> gateway -> services -> data
-    nodes = {
-        "client": (800, 220), "gateway": (905, 220),
-        "identity": (1015, 132), "orders": (1015, 220), "catalog": (1015, 308),
-        "sql": (1118, 132), "events": (1118, 220), "cache": (1118, 308),
-    }
-    edges = [
-        ("client", "gateway"),
-        ("gateway", "identity"), ("gateway", "orders"), ("gateway", "catalog"),
-        ("identity", "sql"), ("orders", "events"), ("catalog", "cache"),
-    ]
-
-    def path(a, b):
-        (x1, y1), (x2, y2) = nodes[a], nodes[b]
-        mx = (x1 + x2) / 2
-        return f"M{x1} {y1} C{mx} {y1} {mx} {y2} {x2} {y2}"
-
-    edge_svg, flow_svg = [], []
-    for i, (a, b) in enumerate(edges):
-        d = path(a, b)
-        edge_svg.append(f'<path d="{d}" class="edge"/>')
-        # Pulses start on the client edge, then fan out
-        delay = 0 if i == 0 else (0.9 if i < 4 else 1.8)
-        flow_svg.append(f'<path d="{d}" pathLength="100" class="flow" style="animation-delay:{delay + (i % 3) * 0.15:.2f}s"/>')
-
-    node_svg = []
-    for name, (x, y) in nodes.items():
-        r = 7 if name == "gateway" else 5
-        cls = "node gw" if name == "gateway" else "node"
-        node_svg.append(f'<circle cx="{x}" cy="{y}" r="{r}" class="{cls}"/>')
-        node_svg.append(f'<text x="{x}" y="{y + 26}" class="label">{name}</text>')
-
+    dg_defs, dg_body, dg_css = diagram(t)
     TERM_W = len("saud@arch ~ ❯ architect · build · refine") * 10.2
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="1200" height="440" role="img" aria-labelledby="title desc">
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 440" width="1200" height="440" role="img" aria-labelledby="title desc">
   <title id="title">Saud Khan — Software Engineer · Software Architect</title>
   <desc id="desc">Scalable systems. Clean architecture. Considered details. An animated diagram shows requests flowing from a client through an API gateway to services and data stores.</desc>
   <defs>
@@ -71,7 +136,7 @@ def hero(t):
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
       <path d="M40 0H0V40" fill="none" stroke="{t['grid']}" stroke-opacity="{t['grid_op']}" stroke-width="1"/>
     </pattern>
-    <radialGradient id="fade" cx="80%" cy="50%" r="62%">
+    <radialGradient id="fade" cx="78%" cy="54%" r="58%">
       <stop offset="0" stop-color="#fff" stop-opacity="1"/>
       <stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </radialGradient>
@@ -81,6 +146,7 @@ def hero(t):
       <stop offset="0.6" stop-color="{t['cyan']}"/>
       <stop offset="1" stop-color="{t['mint']}"/>
     </linearGradient>
+    {dg_defs}
   </defs>
   <style>
     .eyebrow {{ font: 600 17px {MONO}; letter-spacing: 3px; }}
@@ -89,19 +155,11 @@ def hero(t):
     .term    {{ font: 500 17px {MONO}; fill: {t['text3']}; }}
     .term .cmd {{ fill: {t['text2']}; }}
     .term .ok  {{ fill: {t['mint']}; }}
-    .label   {{ font: 500 13px {MONO}; fill: {t['text3']}; text-anchor: middle; }}
-    .edge    {{ fill: none; stroke: {t['text3']}; stroke-opacity: 0.45; stroke-width: 1.2; }}
-    .flow    {{ fill: none; stroke: {t['cyan']}; stroke-width: 2.4; stroke-linecap: round;
-               stroke-dasharray: 7 93; stroke-dashoffset: 100; opacity: 0;
-               animation: flow 3.6s cubic-bezier(.45,0,.25,1) infinite; }}
-    .node    {{ fill: {t['node_fill']}; stroke: {t['cyan']}; stroke-width: 1.6; }}
-    .node.gw {{ stroke: {t['blue']}; stroke-width: 2; animation: pulse 3.6s ease-in-out infinite; }}
+    {dg_css}
     .a1 {{ animation: drift1 18s ease-in-out infinite alternate; }}
     .a2 {{ animation: drift2 22s ease-in-out infinite alternate; }}
     .a3 {{ animation: drift3 26s ease-in-out infinite alternate; }}
     .cursor {{ fill: {t['cyan']}; animation: blink 1.1s steps(1) infinite; }}
-    @keyframes flow  {{ 0% {{ stroke-dashoffset: 100; opacity: 0; }} 8% {{ opacity: 1; }} 55% {{ stroke-dashoffset: 0; opacity: 1; }} 62%, 100% {{ stroke-dashoffset: 0; opacity: 0; }} }}
-    @keyframes pulse {{ 0%, 100% {{ stroke-opacity: 1; }} 50% {{ stroke-opacity: 0.45; }} }}
     @keyframes drift1 {{ to {{ transform: translate(-90px, 40px); }} }}
     @keyframes drift2 {{ to {{ transform: translate(-60px, -50px); }} }}
     @keyframes drift3 {{ to {{ transform: translate(80px, -30px); }} }}
@@ -117,11 +175,7 @@ def hero(t):
     </g>
     <rect width="1200" height="440" fill="url(#grid)" mask="url(#gridmask)"/>
 
-    <g>
-      {chr(10).join("      " + e for e in edge_svg).strip()}
-      {chr(10).join("      " + f for f in flow_svg).strip()}
-      {chr(10).join("      " + n for n in node_svg).strip()}
-    </g>
+    {dg_body}
 
     <text x="80" y="140" class="eyebrow" fill="url(#eyebrow)">SOFTWARE ENGINEER · SOFTWARE ARCHITECT</text>
     <text x="73" y="240" class="name">Saud Khan</text>
